@@ -1,15 +1,10 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Use 10.0.2.2 for Android emulator, localhost for Web / Linux desktop
-  static String get baseUrl {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:4000/api';
-    }
-    return 'http://localhost:4000/api';
-  }
+  // Production backend hosted on Railway
+  static const String baseUrl =
+      'https://paypilot-production-c517.up.railway.app/api';
 
   static Future<Map<String, dynamic>> getHealth() async {
     final res = await http.get(Uri.parse('$baseUrl/health'));
@@ -150,12 +145,16 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> deletePayment(String paymentId) async {
-    final res = await http.delete(Uri.parse('$baseUrl/payments/$paymentId'));
+    final res = await http.delete(
+      Uri.parse('$baseUrl/payments/$paymentId'),
+    );
     return jsonDecode(res.body);
   }
 
   static Future<Map<String, dynamic>> getSmartCheck() async {
-    final res = await http.get(Uri.parse('$baseUrl/payments/smart-check'));
+    final res = await http.get(
+      Uri.parse('$baseUrl/payments/smart-check'),
+    );
     if (res.statusCode == 200) {
       return jsonDecode(res.body);
     }
@@ -163,7 +162,9 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> runSchedulerNow() async {
-    final res = await http.post(Uri.parse('$baseUrl/payments/run-now'));
+    final res = await http.post(
+      Uri.parse('$baseUrl/payments/run-now'),
+    );
     return jsonDecode(res.body);
   }
 
