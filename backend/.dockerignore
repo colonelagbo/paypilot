@@ -1,0 +1,5 @@
+node_modules
+paypilot.db
+paypilot.db-wal
+paypilot.db-shm
+.env
