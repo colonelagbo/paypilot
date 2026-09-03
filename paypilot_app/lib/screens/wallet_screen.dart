@@ -42,25 +42,106 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   Future<void> _showFundDialog() async {
-    setState(() => _isFunding = true);
-    try {
-      final account = await ApiService.getDepositAccount();
-      if (!mounted) return;
-      final data = account['data'] is Map ? Map<String,dynamic>.from(account['data']) : account;
-      final accountNumber = data['accountNumber'] ?? data['account_number'] ?? '—';
-      final accountName = data['accountName'] ?? data['account_name'] ?? '—';
-      final bankName = data['bankName'] ?? data['bank_name'] ?? data['bank'] ?? '—';
-      await showDialog(context: context, builder: (ctx) => AlertDialog(
+    final controller = TextEditingController(text: '50000');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF161B22),
-        title: const Text('Fund BMONI Wallet', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: SelectableText('Transfer NGN to this BMONI deposit account.\n\nBank: $bankName\nAccount name: $accountName\nAccount number: $accountNumber\n\nBMONI will credit the wallet as CNGN after the deposit is processed.', style: const TextStyle(color: Color(0xFFC9D1D9), height: 1.5)),
-        actions: [TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('Done'))],
-      ));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to load BMONI funding account: $e'), backgroundColor: Colors.red));
-    } finally { if (mounted) { setState(() => _isFunding = false); _loadData(); } }
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFF30363D))),
+        title: const Row(
+          children: [
+            Icon(Icons.add_card_rounded, color: Color(0xFFB368F7)),
+            SizedBox(width: 8),
+            Text('Fund Sandbox Wallet', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Credit test CNGN tokens to your BMONI embedded wallet for automated schedule execution.',
+              style: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            const Text('Amount (₦)', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 12, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                prefixText: '₦ ',
+                prefixStyle: const TextStyle(color: Colors.white),
+                filled: true,
+                fillColor: const Color(0xFF0D1117),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [10000, 25000, 50000, 100000].map((amt) {
+                return ActionChip(
+                  label: Text('₦${NumberFormat.compact().format(amt)}', style: const TextStyle(fontSize: 11, color: Colors.white)),
+                  backgroundColor: const Color(0xFF21262D),
+                  side: const BorderSide(color: Color(0xFF30363D)),
+                  onPressed: () {
+                    controller.text = amt.toString();
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF8B949E))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF7526C9),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final amount = double.tryParse(controller.text) ?? 10000;
+              Navigator.pop(ctx);
+              _fundWallet(amount);
+            },
+            child: const Text('Fund Wallet'),
+          ),
+        ],
+      ),
+    );
   }
 
+  Future<void> _fundWallet(double amount) async {
+    setState(() => _isFunding = true);
+    try {
+      final res = await ApiService.fundSandboxWallet(amount);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Wallet funded successfully!'),
+            backgroundColor: const Color(0xFF3FB950),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Funding failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isFunding = false);
+        _loadData();
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +152,9 @@ class _WalletScreenState extends State<WalletScreen> {
       );
     }
 
-    final totalBalance = (_wallet?['balance'] ?? 0.0) as num;
+    final totalBalance = (_wallet?['totalBalance'] ?? 0.0) as num;
+    final onchainBalance = (_wallet?['onchainBalance'] ?? 0.0) as num;
+    final sandboxBalance = (_wallet?['sandboxFundedBalance'] ?? 0.0) as num;
     final address = _wallet?['walletAddress'] ?? '0x...';
     final bmoniWalletId = _wallet?['bmoniWalletId'] ?? '';
 
@@ -152,6 +235,26 @@ class _WalletScreenState extends State<WalletScreen> {
                   const Divider(color: Color(0xFF4C1D95)),
                   const SizedBox(height: 12),
 
+                  // Balance breakdown
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('On-chain Balance', style: TextStyle(color: Color(0xFFC084FC), fontSize: 11)),
+                          Text(currencyFormat.format(onchainBalance), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Text('Sandbox Test Credit', style: TextStyle(color: Color(0xFFC084FC), fontSize: 11)),
+                          Text(currencyFormat.format(sandboxBalance), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14)),
+                        ],
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
 
                   // Smart Account Address
@@ -208,7 +311,7 @@ class _WalletScreenState extends State<WalletScreen> {
                       children: [
                         Icon(Icons.add_circle_outline_rounded, size: 18),
                         SizedBox(width: 8),
-                        Text('Fund Wallet via BMONI', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        Text('Fund Wallet (Sandbox)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                       ],
                     ),
             ),

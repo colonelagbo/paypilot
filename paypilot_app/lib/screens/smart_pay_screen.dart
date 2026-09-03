@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
-import '../services/wallet_service.dart';
 
 class SmartPayScreen extends StatefulWidget {
   final VoidCallback onFundWalletTapped;
@@ -44,12 +43,6 @@ class _SmartPayScreenState extends State<SmartPayScreen> {
     setState(() => _isExecuting = true);
     try {
       final result = await ApiService.runSchedulerNow();
-      final results = (result['results'] as List?) ?? const [];
-      for (final item in results.where((x) => x is Map && x['status'] == 'AWAITING_SIGNATURE')) {
-        final prepared = await ApiService.preparePaymentSignature(item['id'].toString());
-        final signature = await WalletService.signDigest(prepared['signingPayloadHash'].toString());
-        await ApiService.submitPaymentSignature(item['id'].toString(), signature);
-      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -1,171 +1,254 @@
-export const BMONI_PRODUCTION_BASE_URL = 'https://embedded.bmoni.com';
-export const BMONI_SANDBOX_BASE_URL = 'https://embedded-dev.bmoni.com';
-export const BMONI_SANDBOX_SHARED_API_KEY = 'pk_a025cacbf33a_76fb864113f3540909de5b1da39cc146906e35b1c6d4d1e4';
+import { ethers } from 'ethers';
 
-const BASE_URL = process.env.BMONI_BASE_URL || BMONI_SANDBOX_BASE_URL;
-const API_KEY = process.env.BMONI_API_KEY || (BASE_URL === BMONI_SANDBOX_BASE_URL ? BMONI_SANDBOX_SHARED_API_KEY : '');
-
-if (!API_KEY) {
-  console.warn('[BMONI] BMONI_API_KEY is not set. API calls will fail until configured.');
-}
-
-export { BASE_URL, API_KEY };
+export const BASE_URL = 'https://embedded-dev.bmoni.com';
+export const API_KEY = process.env.BMONI_API_KEY || 'pk_a025cacbf33a_76fb864113f3540909de5b1da39cc146906e35b1c6d4d1e4';
 
 export async function bmoniFetch(endpoint, options = {}) {
-  if (!API_KEY) throw new Error('BMONI_API_KEY is not configured');
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'x-api-key': API_KEY,
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
+  const url = `${BASE_URL}${endpoint}`;
+  const headers = {
+    'x-api-key': API_KEY,
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
 
+  const response = await fetch(url, { ...options, headers });
   const text = await response.text();
-  let data;
-  try { data = text ? JSON.parse(text) : {}; } catch { data = text; }
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    json = text;
+  }
+
   if (!response.ok) {
-    const err = new Error(`BMONI ${options.method || 'GET'} ${endpoint} failed (${response.status}): ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+    const errorMsg = typeof json === 'object' && json ? JSON.stringify(json) : text;
+    const err = new Error(`BMONI API ${options.method || 'GET'} ${endpoint} failed (${response.status}): ${errorMsg}`);
     err.status = response.status;
-    err.data = data;
+    err.data = json;
     throw err;
   }
-  return data;
+
+  return json;
 }
 
-const unwrap = (res, key) => res?.[key] || res?.data?.[key] || res?.data || res;
+/**
+ * 1. Create BMONI user using sandbox persona
+ */
+export async function createBmoniUser({ firstName = 'Bunch', lastName = 'Dillon', email, phoneNumber }) {
+  const randomSuffix = Math.floor(100000 + Math.random() * 900000);
+  const userEmail = email || `bunch.dillon.${randomSuffix}@example.com`;
+  const userPhone = phoneNumber || `+2348000${randomSuffix}`;
 
-export async function createBmoniUser({ firstName, lastName, email, phoneNumber }) {
   const res = await bmoniFetch('/v1/users', {
     method: 'POST',
-    body: JSON.stringify({ firstName, lastName, email, phoneNumber }),
+    body: JSON.stringify({
+      firstName,
+      lastName,
+      email: userEmail,
+      phoneNumber: userPhone,
+    }),
   });
-  const user = unwrap(res, 'user');
-  return { bmoniUserId: user.bmoniUserId || user.id, raw: user };
+
+  const bmoniUser = res.user || res.data?.user || res;
+  return {
+    bmoniUserId: bmoniUser.bmoniUserId,
+    email: userEmail,
+    phoneNumber: userPhone,
+    raw: bmoniUser,
+  };
 }
 
+/**
+ * 2. Request owner-proof challenge
+ */
 export async function getOwnerProofChallenge(bmoniUserId, userOwnerAddress, currency = 'CNGN') {
   const res = await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/owner-proof-challenges`, {
     method: 'POST',
-    body: JSON.stringify({ currency, userOwnerAddress }),
+    body: JSON.stringify({
+      currency,
+      userOwnerAddress,
+    }),
   });
-  return { challengeId: res.challengeId || res.data?.challengeId, message: res.message || res.data?.message };
+
+  const challengeId = res.challengeId || res.data?.challengeId;
+  const message = res.message || res.data?.message;
+
+  return { challengeId, message };
 }
 
-export async function createManagedSmartWallet({ bmoniUserId, userOwnerAddress, ownerProofChallengeId, ownerProofSignature, currency = 'CNGN' }) {
+/**
+ * 3. Create managed smart wallet
+ */
+export async function createManagedSmartWallet({
+  bmoniUserId,
+  userOwnerAddress,
+  ownerProofChallengeId,
+  ownerProofSignature,
+  currency = 'CNGN',
+}) {
   const res = await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/create-managed`, {
     method: 'POST',
-    body: JSON.stringify({ currency, userOwnerAddress, ownerProofChallengeId, ownerProofSignature }),
+    body: JSON.stringify({
+      currency,
+      userOwnerAddress,
+      ownerProofChallengeId,
+      ownerProofSignature,
+    }),
   });
-  const wallet = unwrap(res, 'wallet');
+
+  const wallet = res.data || res;
   return {
     smartWalletId: wallet.id || wallet.smartWalletId,
     walletAddress: wallet.walletAddress || wallet.address,
-    currency: wallet.currency || currency,
+    currency: wallet.currency || 'CNGN',
     isActive: wallet.isActive,
     raw: wallet,
   };
 }
 
-export async function startNigeriaOnboarding({ bmoniUserId, walletAddress, bvn }) {
-  if (!bvn) throw new Error('BVN is required to start Nigeria onboarding');
-  return bmoniFetch(`/v1/users/${bmoniUserId}/onboarding/start-nigeria`, {
+/**
+ * 4. Start Nigeria Onboarding (NGN Virtual Account)
+ */
+export async function startNigeriaOnboarding({ bmoniUserId, walletAddress, bvn = '95888168924' }) {
+  const res = await bmoniFetch(`/v1/users/${bmoniUserId}/onboarding/start-nigeria`, {
     method: 'POST',
-    body: JSON.stringify({ bvn, ngnWalletAddress: walletAddress, ngnWalletIndex: 0 }),
+    body: JSON.stringify({
+      bvn,
+      ngnWalletAddress: walletAddress,
+      ngnWalletIndex: 0,
+    }),
   });
+  return res;
 }
 
-export async function getOnboardingStatus(bmoniUserId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/onboarding/status`);
-}
-
+/**
+ * 5. Fetch Account Wallets & Live Balances
+ */
 export async function getAccountBalances(bmoniUserId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/account/balances`);
+  try {
+    const res = await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/account/balances`);
+    return res;
+  } catch (err) {
+    console.error('Error fetching BMONI balances:', err.message);
+    return { balances: [] };
+  }
 }
 
 export async function getAccountWallets(bmoniUserId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/account/wallets`);
+  try {
+    const res = await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/account/wallets`);
+    return res;
+  } catch (err) {
+    console.error('Error fetching BMONI wallets:', err.message);
+    return [];
+  }
 }
 
+/**
+ * 6. Fetch Supported Nigerian Banks
+ */
 export async function getNigerianBanks(bmoniUserId) {
-  const res = await bmoniFetch(`/v1/users/${bmoniUserId}/bank-accounts/nigerian-banks`);
-  return Array.isArray(res) ? res : (res.banks || res.data?.banks || res.data || []);
+  try {
+    const res = await bmoniFetch(`/v1/users/${bmoniUserId}/bank-accounts/nigerian-banks`);
+    return Array.isArray(res) ? res : [];
+  } catch (err) {
+    console.error('Error fetching Nigerian banks:', err.message);
+    return [];
+  }
 }
 
-export async function getNgnDepositAccount(bmoniUserId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/bank-accounts/deposit-accounts/NGN`);
-}
+/**
+ * 7. End-to-End Transfer Execution via BMONI Smart Wallet Proposal
+ */
+export async function executeTransferProposal({
+  bmoniUserId,
+  smartWalletId,
+  toAddress,
+  amount,
+  currency = 'CNGN',
+  description = 'PayPilot scheduled transfer',
+  signingPrivateKey,
+}) {
+  console.log(`[BMONI] Creating transfer proposal for ${amount} ${currency} to ${toAddress}...`);
 
-export async function createNgnOnramp(bmoniUserId, smartWalletId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/${smartWalletId}/onramp/vba/nigeria`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-}
-
-export async function verifyNigerianAccount(bmoniUserId, { bankCode, accountNumber }) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/bank-accounts/verify-nigerian-account`, {
-    method: 'POST',
-    body: JSON.stringify({ bankCode, accountNumber }),
-  });
-}
-
-export async function registerNigerianWithdrawalAccount(bmoniUserId, { bankCode, accountNumber, accountName }) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/bank-accounts/withdrawal-accounts/nigeria`, {
-    method: 'POST',
-    body: JSON.stringify({ bankCode, accountNumber, accountName }),
-  });
-}
-
-export async function createNigerianOfframp({ bmoniUserId, smartWalletId, withdrawalAccountId, amount, description }) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/${smartWalletId}/offramp/nigeria`, {
+  // A. Create proposal
+  const propRes = await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/${smartWalletId}/proposals`, {
     method: 'POST',
     body: JSON.stringify({
-      withdrawalAccountId,
-      amount: String(amount),
-      currency: 'CNGN',
-      description: description || 'PayPilot bank payment',
+      proposal: {
+        type: 'TRANSFER',
+        toAddress,
+        amount: String(amount),
+        currency,
+        description,
+      },
     }),
   });
-}
 
-export async function getProposalSignPayload(bmoniUserId, proposalId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/proposals/${proposalId}/sign-payload`);
-}
+  const proposal = propRes.proposal || propRes.data?.proposal || propRes;
+  const proposalId = proposal.id;
+  console.log(`[BMONI] Proposal created. ID: ${proposalId}, Status: ${proposal.status}`);
 
-export async function approveProposal(bmoniUserId, proposalId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/proposals/${proposalId}/approve`, { method: 'POST' });
-}
-
-export async function submitProposalSignature(bmoniUserId, proposalId, signature) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/proposals/${proposalId}/sign`, {
-    method: 'POST', body: JSON.stringify({ signature }),
+  // B. Approve proposal
+  await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/proposals/${proposalId}/approve`, {
+    method: 'POST',
   });
-}
+  console.log(`[BMONI] Proposal approved.`);
 
-export async function getProposal(bmoniUserId, proposalId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/proposals/${proposalId}`);
-}
+  // C. Poll sign-payload
+  let hashToSign;
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const payloadRes = await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/proposals/${proposalId}/sign-payload`);
+      const raw = payloadRes.data || payloadRes;
+      const found = raw.signingPayloadHash || raw.hashToSign;
+      if (found) {
+        hashToSign = found;
+        break;
+      }
+    } catch (e) {
+      // 409 when payload is still preparing
+    }
+  }
 
-// EmbeddedWalletReadDataSource backend proxy functions
-export async function fetchWallets(bmoniUserId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/account/wallets`);
-}
+  if (!hashToSign) {
+    throw new Error(`Failed to obtain sign-payload for proposal ${proposalId}`);
+  }
 
-export async function fetchWalletDetail(bmoniUserId, walletId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/${walletId}`);
-}
+  console.log(`[BMONI] Obtained hashToSign: ${hashToSign}`);
 
-export async function fetchBalance(bmoniUserId, walletId) {
-  return bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/${walletId}/balance`);
-}
+  // D. Sign raw 32-byte digest WITHOUT EIP-191 prefix
+  const wallet = new ethers.Wallet(signingPrivateKey);
+  const signature = wallet.signingKey.sign(hashToSign).serialized;
+  console.log(`[BMONI] Generated raw secp256k1 signature: ${signature.slice(0, 30)}...`);
 
-export async function fetchTransactions(bmoniUserId, walletId, { page, pageSize } = {}) {
-  const query = new URLSearchParams();
-  if (page) query.append('page', String(page));
-  if (pageSize) query.append('pageSize', String(pageSize));
-  const queryString = query.toString();
-  const endpoint = `/v1/users/${bmoniUserId}/smart-wallets/${walletId}/transactions${queryString ? `?${queryString}` : ''}`;
-  return bmoniFetch(endpoint);
+  // E. Submit signature
+  const submitRes = await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/proposals/${proposalId}/sign`, {
+    method: 'POST',
+    body: JSON.stringify({ signature }),
+  });
+  console.log(`[BMONI] Signature submitted. BMONI co-signed.`);
+
+  // F. Poll final status
+  let finalProposal = submitRes.proposal || submitRes.data?.proposal || submitRes;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const check = await bmoniFetch(`/v1/users/${bmoniUserId}/smart-wallets/proposals/${proposalId}`);
+      finalProposal = check.proposal || check.data?.proposal || check;
+      if (['COMPLETED', 'FAILED', 'EXECUTED'].includes(finalProposal.status)) {
+        break;
+      }
+    } catch (e) {}
+  }
+
+  return {
+    proposalId,
+    status: finalProposal.status,
+    workflowId: finalProposal.workflowId,
+    blockchainTxHash: finalProposal.blockchainTxHash,
+    reference: `BMONI-${proposalId.slice(0, 8).toUpperCase()}`,
+    proposal: finalProposal,
+  };
 }

@@ -15,7 +15,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _nameController = TextEditingController(text: 'Bunch Dillon');
   final _businessController = TextEditingController(text: 'Acme Technologies Ltd');
   final _emailController = TextEditingController(text: 'bunch.dillon@example.com');
-  final _bvnController = TextEditingController();
   bool _isLoading = false;
   String? _statusMessage;
   String? _errorMessage;
@@ -24,31 +23,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _statusMessage = 'Connect your secure browser wallet...';
+      _statusMessage = 'Provisioning on-device EVM key via BmoniEmbeddedSdk...';
     });
 
     try {
-      final bvn = _bvnController.text.trim();
-      if (bvn.length != 11) throw Exception('Enter the 11-digit BVN required for BMONI Nigeria onboarding.');
+      // 1. Client-side wallet provisioning via bmoni_embedded_sdk
+      final ownerAddress = await WalletService.getOrInitWallet();
+      setState(() {
+        _statusMessage = 'Device key ready ($ownerAddress). Connecting to BMONI API...';
+      });
 
-      final ownerAddress = await WalletService.connect();
-      setState(() { _statusMessage = 'Connected wallet $ownerAddress. Requesting BMONI owner challenge...'; });
-
-      final challenge = await ApiService.createOnboardingChallenge(
-        name: _nameController.text.trim(), businessName: _businessController.text.trim(),
-        email: _emailController.text.trim(), ownerAddress: ownerAddress,
-      );
-      final challengeData = Map<String, dynamic>.from(challenge['challenge'] ?? {});
-      setState(() { _statusMessage = 'Approve the owner-proof signature in your wallet...'; });
-      final ownerSignature = await WalletService.signMessage(challengeData['message'].toString());
-
-      setState(() { _statusMessage = 'Creating your BMONI Smart Wallet and NGN rail...'; });
-      final result = await ApiService.completeOnboarding(
-        name: _nameController.text.trim(), businessName: _businessController.text.trim(),
-        email: _emailController.text.trim(), ownerAddress: ownerAddress,
-        bmoniUserId: challenge['bmoniUserId'].toString(),
-        ownerProofChallengeId: challengeData['challengeId'].toString(),
-        ownerProofSignature: ownerSignature, bvn: bvn,
+      // 2. Call backend to create BMONI user, submit KYC persona, and create managed wallet
+      final result = await ApiService.onboardUser(
+        name: _nameController.text.trim(),
+        businessName: _businessController.text.trim(),
+        email: _emailController.text.trim(),
+        ownerAddress: ownerAddress,
       );
 
       if (result['success'] == true) {
@@ -167,7 +157,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'Connect your wallet and complete BMONI Nigeria onboarding to create your business payment wallet.',
+                          'Uses BMONI sandbox persona for instant KYC & NGN Virtual Account creation.',
                           style: TextStyle(fontSize: 13, color: Color(0xFF8B949E)),
                         ),
                         const SizedBox(height: 20),
@@ -222,19 +212,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           ),
                         ),
                       ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-                  const Text('BVN', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 13, fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: _bvnController, keyboardType: TextInputType.number, obscureText: true, maxLength: 11,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      counterText: '', filled: true, fillColor: const Color(0xFF0D1117),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      hintText: '11-digit BVN', hintStyle: const TextStyle(color: Color(0xFF484F58)),
                     ),
                   ),
 

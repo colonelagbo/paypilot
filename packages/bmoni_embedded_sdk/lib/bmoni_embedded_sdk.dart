@@ -11,20 +11,11 @@ import 'package:flutter/foundation.dart';
 import 'bmoni_embedded_sdk_platform_interface.dart';
 import 'src/bmoni_embedded_sdk_config.dart';
 import 'src/bmoni_signer_exception.dart';
-import 'src/constants/bmoni_urls.dart';
-import 'src/contracts/embedded_wallet_contracts.dart';
-import 'src/datasources/bmoni_embedded_wallet_remote_data_source.dart';
 import 'src/pin_store.dart';
 import 'src/wallet_address_store.dart';
 
-export 'package:dartz/dartz.dart' show Either, Left, Right;
 export 'src/bmoni_embedded_sdk_config.dart';
 export 'src/bmoni_signer_exception.dart';
-export 'src/constants/bmoni_urls.dart';
-export 'src/contracts/embedded_wallet_contracts.dart';
-export 'src/datasources/bmoni_embedded_wallet_remote_data_source.dart';
-export 'src/failures/embedded_failure.dart';
-export 'src/models/embedded_wallet_models.dart';
 
 /// High-level entry point for the Bmoni Embedded SDK.
 ///
@@ -105,27 +96,6 @@ final class BmoniEmbeddedSdk {
     _config = BmoniEmbeddedSdkConfig(
       pinLength: pinLength,
       requirePin: requirePin,
-    );
-  }
-
-  /// Creates a ready-to-use [EmbeddedWalletReadDataSource] configured
-  /// against BMONI API endpoints.
-  ///
-  /// Defaults to the Sandbox / Development URL ([BmoniUrls.development])
-  /// and the shared sandbox API key ([BmoniUrls.sandboxSharedApiKey]).
-  static EmbeddedWalletReadDataSource createReadDataSource({
-    String baseUrl = BmoniUrls.development,
-    String apiKey = BmoniUrls.sandboxSharedApiKey,
-    String? userId,
-    Map<String, String>? customHeaders,
-    bool isProxy = false,
-  }) {
-    return BmoniEmbeddedWalletRemoteDataSource(
-      baseUrl: baseUrl,
-      apiKey: apiKey,
-      userId: userId,
-      customHeaders: customHeaders,
-      isProxy: isProxy,
     );
   }
 

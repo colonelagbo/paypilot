@@ -1,7 +1,7 @@
 import { ethers } from 'ethers';
 
-const BASE_URL = process.env.BMONI_BASE_URL || 'https://embedded-dev.bmoni.com';
-const API_KEY = process.env.BMONI_API_KEY || 'pk_a025cacbf33a_76fb864113f3540909de5b1da39cc146906e35b1c6d4d1e4';
+const BASE_URL = 'https://embedded-dev.bmoni.com';
+const API_KEY = 'pk_a025cacbf33a_76fb864113f3540909de5b1da39cc146906e35b1c6d4d1e4';
 
 async function api(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;

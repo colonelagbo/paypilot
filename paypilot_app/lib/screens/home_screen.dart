@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../services/api_service.dart';
-import '../services/wallet_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback onNavigateToSmartCheck;
@@ -78,31 +77,109 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _showFundDialog() async {
-    setState(() => _isFunding = true);
-    try {
-      final account = await ApiService.getDepositAccount();
-      if (!mounted) return;
-      final data = account['data'] is Map ? Map<String,dynamic>.from(account['data']) : account;
-      final accountNumber = data['accountNumber'] ?? data['account_number'] ?? '—';
-      final accountName = data['accountName'] ?? data['account_name'] ?? '—';
-      final bankName = data['bankName'] ?? data['bank_name'] ?? data['bank'] ?? '—';
-      await showDialog(context: context, builder: (ctx) => AlertDialog(
+    final controller = TextEditingController(text: '50000');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF161B22),
-        title: const Text('Fund BMONI Wallet', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: SelectableText('''Transfer NGN to this BMONI deposit account.
-
-Bank: $bankName
-Account name: $accountName
-Account number: $accountNumber
-
-BMONI will credit the wallet as CNGN after the deposit is processed.''', style: const TextStyle(color: Color(0xFFC9D1D9), height: 1.5)),
-        actions: [TextButton(onPressed: ()=>Navigator.pop(ctx), child: const Text('Done'))],
-      ));
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to load BMONI funding account: $e'), backgroundColor: Colors.red));
-    } finally { if (mounted) { setState(() => _isFunding = false); _loadData(); } }
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFF30363D)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.add_card_rounded, color: Color(0xFFB368F7)),
+            SizedBox(width: 8),
+            Text('Fund Sandbox Wallet', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Credit test CNGN tokens to your BMONI embedded wallet for automated schedule execution.',
+              style: TextStyle(color: Color(0xFF8B949E), fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            const Text('Amount (₦)', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 12, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 6),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              decoration: InputDecoration(
+                prefixText: '₦ ',
+                prefixStyle: const TextStyle(color: Colors.white),
+                filled: true,
+                fillColor: const Color(0xFF0D1117),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [10000, 25000, 50000, 100000].map((amt) {
+                return ActionChip(
+                  label: Text('₦${NumberFormat.compact().format(amt)}', style: const TextStyle(fontSize: 11, color: Colors.white)),
+                  backgroundColor: const Color(0xFF21262D),
+                  side: const BorderSide(color: Color(0xFF30363D)),
+                  onPressed: () {
+                    controller.text = amt.toString();
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Color(0xFF8B949E))),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF7526C9),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final amount = double.tryParse(controller.text) ?? 10000;
+              Navigator.pop(ctx);
+              _fundWallet(amount);
+            },
+            child: const Text('Fund Wallet'),
+          ),
+        ],
+      ),
+    );
   }
 
+  Future<void> _fundWallet(double amount) async {
+    setState(() => _isFunding = true);
+    try {
+      final res = await ApiService.fundSandboxWallet(amount);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res['message'] ?? 'Wallet funded successfully!'),
+            backgroundColor: const Color(0xFF3FB950),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Funding failed: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isFunding = false);
+        _loadData();
+      }
+    }
+  }
 
   Future<void> _deleteScheduledPayment(Map<String, dynamic> payment) async {
     final paymentId = payment['id'].toString();
@@ -171,20 +248,10 @@ BMONI will credit the wallet as CNGN after the deposit is processed.''', style: 
     setState(() => _isRunningScheduler = true);
     try {
       final result = await ApiService.runSchedulerNow();
-      final results = (result['results'] as List?) ?? const [];
-      final awaiting = results.where((x) => x is Map && x['status'] == 'AWAITING_SIGNATURE').toList();
-      if (awaiting.isNotEmpty) {
-        for (final item in awaiting) {
-          final paymentId = item['id'].toString();
-          final prepared = await ApiService.preparePaymentSignature(paymentId);
-          final signature = await WalletService.signDigest(prepared['signingPayloadHash'].toString());
-          await ApiService.submitPaymentSignature(paymentId, signature);
-        }
-      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(awaiting.isNotEmpty ? 'BMONI payment signed and submitted.' : (result['message'] ?? 'Scheduler completed successfully!')),
+            content: Text(result['message'] ?? 'Scheduler completed successfully!'),
             backgroundColor: const Color(0xFF7526C9),
           ),
         );
@@ -226,6 +293,7 @@ BMONI will credit the wallet as CNGN after the deposit is processed.''', style: 
 
     final totalBalance = (_wallet?['totalBalance'] ?? 0.0) as num;
     final onchainBalance = (_wallet?['onchainBalance'] ?? 0.0) as num;
+    final sandboxBalance = (_wallet?['sandboxFundedBalance'] ?? 0.0) as num;
     final address = _wallet?['walletAddress'] ?? '0x...';
     final shortfall = (_smartCheck?['shortfall'] ?? 0.0) as num;
     final isShortfall = shortfall > 0;
@@ -339,7 +407,7 @@ BMONI will credit the wallet as CNGN after the deposit is processed.''', style: 
                         style: const TextStyle(color: Color(0xFFC084FC), fontSize: 11, fontWeight: FontWeight.w500),
                       ),
                       Text(
-                        'BMONI CNGN',
+                        'Sandbox: ${currencyFormat.format(sandboxBalance)}',
                         style: const TextStyle(color: Color(0xFFC084FC), fontSize: 11, fontWeight: FontWeight.w500),
                       ),
                     ],
@@ -692,23 +760,6 @@ BMONI will credit the wallet as CNGN after the deposit is processed.''', style: 
                               Text(
                                 'Ref: ${payment['bmoni_reference']}',
                                 style: const TextStyle(color: Color(0xFFB368F7), fontSize: 11, fontFamily: 'monospace'),
-                              ),
-                            ],
-                            if (status == 'AWAITING_SIGNATURE') ...[
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  try {
-                                    final prepared = await ApiService.preparePaymentSignature(payment['id'].toString());
-                                    final signature = await WalletService.signDigest(prepared['signingPayloadHash'].toString());
-                                    await ApiService.submitPaymentSignature(payment['id'].toString(), signature);
-                                    await _loadData();
-                                  } catch (e) {
-                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Payment signature failed: $e'), backgroundColor: Colors.red));
-                                  }
-                                },
-                                icon: const Icon(Icons.lock_open_rounded, size: 14),
-                                label: const Text('Sign & Pay', style: TextStyle(fontSize: 11)),
                               ),
                             ],
                           ],
