@@ -208,7 +208,7 @@ class _SchedulePayrollScreenState extends State<SchedulePayrollScreen> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Select employees and assign amounts. PayPilot verifies your BMONI balance before execution and notifies you of any shortfall.',
+                    'Select employees and assign amounts. PayPilot verifies your connected bank balance before execution and notifies you of any shortfall.',
                     style: TextStyle(color: Color(0xFFD8B4FE), fontSize: 12),
                   ),
                 ),

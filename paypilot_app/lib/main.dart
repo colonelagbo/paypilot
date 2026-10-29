@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'services/api_service.dart';
-import 'services/wallet_service.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/bank_accounts_screen.dart';
 import 'screens/schedule_payment_screen.dart';
 import 'screens/smart_pay_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  WalletService.init();
   runApp(const PayPilotApp());
 }
 
@@ -18,7 +17,7 @@ class PayPilotApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PayPilot — Automated Payment Scheduling on BMONI',
+      title: 'PayPilot — Automated Business Payment Scheduling',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -67,7 +66,7 @@ class _RootNavigatorState extends State<RootNavigator> {
     setState(() => _isLoading = true);
     try {
       final userRes = await ApiService.getCurrentUser();
-      if (userRes['user'] != null && userRes['wallet'] != null) {
+      if (userRes['user'] != null) {
         setState(() {
           _isOnboarded = true;
           _isLoading = false;
@@ -83,6 +82,7 @@ class _RootNavigatorState extends State<RootNavigator> {
   }
 
   int _homeRefreshKey = 0;
+  int _accountsRefreshKey = 0;
   int _scheduleRefreshKey = 0;
   int _smartPayRefreshKey = 0;
 
@@ -90,8 +90,9 @@ class _RootNavigatorState extends State<RootNavigator> {
     setState(() {
       _currentIndex = index;
       if (index == 0) _homeRefreshKey++;
-      if (index == 1) _scheduleRefreshKey++;
-      if (index == 2) _smartPayRefreshKey++;
+      if (index == 1) _accountsRefreshKey++;
+      if (index == 2) _scheduleRefreshKey++;
+      if (index == 3) _smartPayRefreshKey++;
     });
   }
 
@@ -113,6 +114,7 @@ class _RootNavigatorState extends State<RootNavigator> {
             _isOnboarded = true;
             _currentIndex = 0;
             _homeRefreshKey++;
+            _accountsRefreshKey++;
           });
         },
       );
@@ -121,8 +123,12 @@ class _RootNavigatorState extends State<RootNavigator> {
     final screens = [
       HomeScreen(
         key: ValueKey('home_$_homeRefreshKey'),
-        onNavigateToSmartCheck: () => _navigateToTab(2),
-        onNavigateToSchedule: () => _navigateToTab(1),
+        onNavigateToSmartCheck: () => _navigateToTab(3),
+        onNavigateToSchedule: () => _navigateToTab(2),
+        onNavigateToBankAccounts: () => _navigateToTab(1),
+      ),
+      BankAccountsScreen(
+        key: ValueKey('accounts_$_accountsRefreshKey'),
       ),
       SchedulePaymentScreen(
         key: ValueKey('schedule_$_scheduleRefreshKey'),
@@ -130,7 +136,7 @@ class _RootNavigatorState extends State<RootNavigator> {
       ),
       SmartPayScreen(
         key: ValueKey('smartpay_$_smartPayRefreshKey'),
-        onFundWalletTapped: () => _navigateToTab(0),
+        onFundWalletTapped: () => _navigateToTab(1),
       ),
     ];
 
@@ -157,6 +163,11 @@ class _RootNavigatorState extends State<RootNavigator> {
               icon: Icon(Icons.home_outlined),
               activeIcon: Icon(Icons.home_rounded),
               label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.account_balance_outlined),
+              activeIcon: Icon(Icons.account_balance_rounded),
+              label: 'Accounts',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.send_outlined),

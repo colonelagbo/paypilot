@@ -1,5 +1,4 @@
 import { db } from './db.mjs';
-import { executeTransferProposal, getAccountBalances } from './bmoni.mjs';
 
 let isRunning = false;
 
@@ -9,39 +8,30 @@ export async function checkAndExecutePayments() {
 
   try {
     const todayStr = new Date().toISOString().split('T')[0];
-    
-    // Find active user and wallet
+
+    // Find active user
     const user = db.prepare('SELECT * FROM users ORDER BY created_at DESC LIMIT 1').get();
     if (!user) {
       isRunning = false;
       return { message: 'No registered user found' };
     }
 
-    const wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ? LIMIT 1').get(user.id);
-    if (!wallet) {
+    // Find primary connected bank account
+    let bankAccount = db.prepare('SELECT * FROM bank_accounts WHERE user_id = ? AND is_primary = 1 LIMIT 1').get(user.id);
+    if (!bankAccount) {
+      bankAccount = db.prepare('SELECT * FROM bank_accounts WHERE user_id = ? ORDER BY created_at DESC LIMIT 1').get(user.id);
+    }
+
+    if (!bankAccount) {
       isRunning = false;
-      return { message: 'No wallet found for user' };
+      return { message: 'No connected bank account found. Please connect an account.' };
     }
 
-    // Fetch live BMONI balance
-    const bmoniBalances = await getAccountBalances(user.bmoni_user_id);
-    let onchainBalance = 0;
-    if (bmoniBalances.balances && Array.isArray(bmoniBalances.balances)) {
-      const match = bmoniBalances.balances.find((b) => b.smartWalletId === wallet.bmoni_wallet_id);
-      if (match && match.balance) {
-        onchainBalance = parseFloat(match.balance) || 0;
-      }
-    }
-
-    // Effective balance includes test sandbox credits
-    const totalWalletBalance = onchainBalance + (wallet.sandbox_funded_balance || 0);
-
-    // Update wallet table with latest balance
-    db.prepare('UPDATE wallets SET balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(totalWalletBalance, wallet.id);
+    const currentBankBalance = bankAccount.balance || 0.0;
 
     // Find due payments
     const duePayments = db.prepare(`
-      SELECT p.*, r.name as recipient_name, r.wallet_address as recipient_wallet, r.account_number, r.bank_name
+      SELECT p.*, r.name as recipient_name, r.bank_name as recipient_bank_name, r.account_number as recipient_account_number
       FROM scheduled_payments p
       JOIN recipients r ON p.recipient_id = r.id
       WHERE p.user_id = ?
@@ -50,7 +40,7 @@ export async function checkAndExecutePayments() {
       ORDER BY p.payment_date ASC, p.created_at ASC
     `).all(user.id, todayStr);
 
-    console.log(`\n[SCHEDULER] Running cycle for ${todayStr}. Found ${duePayments.length} due payment(s). Wallet Balance: ₦${totalWalletBalance}`);
+    console.log(`\n[SCHEDULER] Running cycle for ${todayStr}. Due: ${duePayments.length} payment(s). Bank: ${bankAccount.bank_name} (${bankAccount.account_number}) Balance: ₦${currentBankBalance.toFixed(2)}`);
 
     if (duePayments.length === 0) {
       isRunning = false;
@@ -59,98 +49,92 @@ export async function checkAndExecutePayments() {
 
     const totalDue = duePayments.reduce((sum, p) => sum + p.amount, 0);
 
-    // Smart Pay Balance Check
-    if (totalWalletBalance < totalDue) {
-      const shortfall = totalDue - totalWalletBalance;
-      console.warn(`[SCHEDULER] ⚠️ Smart Pay Warning: Shortfall of ₦${shortfall.toFixed(2)}. Total Due: ₦${totalDue}, Balance: ₦${totalWalletBalance}`);
-      
+    // Smart Pay Balance Check against connected bank balance
+    if (currentBankBalance < totalDue) {
+      const shortfall = totalDue - currentBankBalance;
+      console.warn(`[SCHEDULER] ⚠️ Smart Pay Warning: Shortfall of ₦${shortfall.toFixed(2)}. Total Due: ₦${totalDue}, Bank Balance: ₦${currentBankBalance}`);
+
       for (const p of duePayments) {
         db.prepare(`
           UPDATE scheduled_payments
           SET status = 'INSUFFICIENT_FUNDS', shortfall_amount = ?, error_message = ?
           WHERE id = ?
-        `).run(shortfall, `Insufficient wallet balance. Shortfall: ₦${shortfall.toFixed(2)}`, p.id);
+        `).run(shortfall, `Insufficient balance in connected ${bankAccount.bank_name} account. Shortfall: ₦${shortfall.toFixed(2)}`, p.id);
       }
 
       isRunning = false;
       return {
         status: 'INSUFFICIENT_FUNDS',
-        message: `Payments flagged due to insufficient balance. Shortfall: ₦${shortfall.toFixed(2)}`,
+        message: `Payments flagged due to insufficient bank balance. Shortfall: ₦${shortfall.toFixed(2)}`,
         totalDue,
-        totalWalletBalance,
+        currentBankBalance,
         shortfall,
       };
     }
 
-    // Balance is sufficient! Execute each payment via BMONI
-    let currentBalance = totalWalletBalance;
+    // Balance is sufficient! Execute each transfer from connected bank
+    let remainingBalance = currentBankBalance;
     const results = [];
 
     for (const payment of duePayments) {
-      if (currentBalance < payment.amount) {
-        const itemShortfall = payment.amount - currentBalance;
+      if (remainingBalance < payment.amount) {
+        const itemShortfall = payment.amount - remainingBalance;
         db.prepare(`
           UPDATE scheduled_payments
-          SET status = 'INSUFFICIENT_FUNDS', shortfall_amount = ?
+          SET status = 'INSUFFICIENT_FUNDS', shortfall_amount = ?, error_message = 'Insufficient bank balance'
           WHERE id = ?
         `).run(itemShortfall, payment.id);
         continue;
       }
 
-      console.log(`[SCHEDULER] Executing payment ${payment.id} of ₦${payment.amount} to ${payment.recipient_name}...`);
+      console.log(`[SCHEDULER] Executing transfer ${payment.id} of ₦${payment.amount} to ${payment.recipient_name} via ${payment.recipient_bank_name}...`);
 
       db.prepare("UPDATE scheduled_payments SET status = 'PROCESSING' WHERE id = ?").run(payment.id);
 
-      const targetAddress = payment.recipient_wallet || '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
-
       try {
-        const bmoniResult = await executeTransferProposal({
-          bmoniUserId: user.bmoni_user_id,
-          smartWalletId: wallet.bmoni_wallet_id,
-          toAddress: targetAddress,
-          amount: payment.amount,
-          currency: 'CNGN',
-          description: payment.description || `PayPilot payment to ${payment.recipient_name}`,
-          signingPrivateKey: user.owner_private_key,
-        });
+        const txnReference = 'PP-TXN-' + Math.random().toString(36).substring(2, 10).toUpperCase();
 
-        // Deduct from sandbox_funded_balance
-        const newFundedBalance = Math.max(0, (wallet.sandbox_funded_balance || 0) - payment.amount);
-        currentBalance -= payment.amount;
+        // Deduct from bank account balance
+        remainingBalance -= payment.amount;
 
-        db.prepare('UPDATE wallets SET sandbox_funded_balance = ?, balance = ? WHERE id = ?').run(
-          newFundedBalance,
-          currentBalance,
-          wallet.id
-        );
+        db.prepare(`
+          UPDATE bank_accounts
+          SET balance = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(remainingBalance, bankAccount.id);
 
         // Update payment status to SUCCESSFUL
         db.prepare(`
           UPDATE scheduled_payments
           SET status = 'SUCCESSFUL',
-              bmoni_proposal_id = ?,
-              bmoni_reference = ?,
+              bank_account_id = ?,
+              reference = ?,
               executed_at = CURRENT_TIMESTAMP,
-              shortfall_amount = 0
+              shortfall_amount = 0,
+              error_message = NULL
           WHERE id = ?
-        `).run(bmoniResult.proposalId, bmoniResult.reference, payment.id);
+        `).run(bankAccount.id, txnReference, payment.id);
 
-        // Log transaction
+        // Insert Transaction record
         const txId = 'tx_' + Math.random().toString(36).substring(2, 11);
         db.prepare(`
-          INSERT INTO transactions (id, scheduled_payment_id, bmoni_reference, amount, currency, status, recipient_name, description)
-          VALUES (?, ?, ?, ?, 'CNGN', 'SUCCESSFUL', ?, ?)
+          INSERT INTO transactions (id, scheduled_payment_id, bank_account_id, reference, amount, currency, status, recipient_name, recipient_bank, recipient_account, source_bank, description)
+          VALUES (?, ?, ?, ?, ?, 'NGN', 'SUCCESSFUL', ?, ?, ?, ?, ?)
         `).run(
           txId,
           payment.id,
-          bmoniResult.reference,
+          bankAccount.id,
+          txnReference,
           payment.amount,
           payment.recipient_name,
+          payment.recipient_bank_name,
+          payment.recipient_account_number,
+          bankAccount.bank_name,
           payment.description || `Payment to ${payment.recipient_name}`
         );
 
-        results.push({ id: payment.id, status: 'SUCCESSFUL', bmoniResult });
-        console.log(`[SCHEDULER] ✅ Payment ${payment.id} completed. Reference: ${bmoniResult.reference}`);
+        results.push({ id: payment.id, status: 'SUCCESSFUL', reference: txnReference });
+        console.log(`[SCHEDULER] ✅ Transfer ${payment.id} completed. Reference: ${txnReference}`);
       } catch (execErr) {
         console.error(`[SCHEDULER] ❌ Error executing payment ${payment.id}:`, execErr.message);
 
@@ -175,7 +159,7 @@ export async function checkAndExecutePayments() {
 
 // Start recurring scheduler timer (every 30 seconds)
 export function startScheduler(intervalMs = 30000) {
-  console.log(`[SCHEDULER] Started background payment scheduler (interval: ${intervalMs / 1000}s)`);
+  console.log(`[SCHEDULER] Started background bank payment scheduler (interval: ${intervalMs / 1000}s)`);
   setInterval(() => {
     checkAndExecutePayments().catch((e) => console.error('[SCHEDULER] Interval error:', e));
   }, intervalMs);

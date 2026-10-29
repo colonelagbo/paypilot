@@ -1,97 +1,94 @@
-# PayPilot — Automated Business Payment Scheduling on BMONI
+# PayPilot — Automated Business Payment Scheduling & Multi-Bank Payout Platform
 
-**PayPilot** is an automated payment scheduling and payroll batch execution platform for small businesses, built directly on top of **BMONI's embedded wallet infrastructure** (`bmoni_embedded_sdk`).
-
-PayPilot watches scheduled payments, checks wallet balance before they are due, warns the business owner if funds are insufficient, and executes the transfer through BMONI when due.
+**PayPilot** is an automated payment scheduling and payroll batch execution platform for businesses. PayPilot lets business owners create an account, connect accounts from **any bank**, schedule single payments and employee payroll, and automatically verify bank balances before executing payouts.
 
 ---
 
-## 🏗 Architecture: PayPilot & BMONI
+## 🏗 Architecture & Core Flow
 
-BMONI provides the financial infrastructure: wallet creation, identity matching, key signing, funding, and on-chain execution. PayPilot provides the automation, scheduling, and pre-payment balance intelligence layer.
+PayPilot features a clean, bank-agnostic architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                 PayPilot Flutter App (5 Screens)            │
-│  Home • Wallet • Schedule Payment • Schedule Payroll • Smart Pay
+│                 PayPilot Flutter App (4 Tabs)               │
+│         Home • Bank Accounts • Schedule • Smart Pay         │
 └──────────────────────────┬──────────────────────────────────┘
                            │
              ┌─────────────┴─────────────┐
              │                           │
-  On-Device Signing              Backend Service
-  (bmoni_embedded_sdk)           (Node.js/Express + SQLite)
-  • secp256k1 key generation     • Scheduler engine (cron / 30s)
-  • Android Keystore / iOS SE    • Smart Pay balance check
-  • EIP-191 personal_sign        • Holds BMONI API secret key
-  • Raw 32-byte digest sign      • BMONI REST API Proxy
+    REST API Client             Backend Service
+    (Flutter / Dart)            (Node.js/Express + SQLite)
+    • Account Creation          • User & Auth management
+    • Bank Connection Flow      • Multi-Bank Account registry
+    • Real-time Balance Watch   • Smart Pay balance intelligence
+    • Batch Payroll Form        • Scheduler engine (runs every 30s)
+             │                  • Settlement transaction logs
              │                           │
              └─────────────┬─────────────┘
                            │
              ┌─────────────▼─────────────┐
-             │   BMONI Embedded Dev API  │
-             │   (https://embedded-dev.  │
-             │        bmoni.com)         │
-             │  • Smart Accounts (Base)  │
-             │  • KMS Multi-Sig Relay    │
-             │  • NGN Virtual Accounts   │
+             │   Connected Bank Rails    │
+             │   • Any Commercial Bank   │
+             │   • Microfinance & Digital│
+             │   • Custom / Global Banks │
              └───────────────────────────┘
 ```
 
 ---
 
-## 🔑 BMONI Integration Flow & Key Findings
+## 🔑 User Journey & Capabilities
 
-Every step of the BMONI Sandbox lifecycle runs against live BMONI development endpoints:
-
-1. **User Creation (`POST /v1/users`)**: Created with sandbox persona **Bunch Dillon** (`firstName: "Bunch"`, `lastName: "Dillon"`).
-2. **Identity & KYC**: Uses Bunch Dillon's BVN (`95888168924`) and verified persona identity on file.
-3. **Owner-Proof Challenge (`POST /v1/users/{id}/smart-wallets/owner-proof-challenges`)**: Generates an EIP-191 challenge message.
-4. **Owner-Proof Signing**: Signed via **EIP-191** (`personal_sign`) with prefix `\x19Ethereum Signed Message:\n{length}`.
-5. **Smart Wallet Provisioning (`POST /v1/users/{id}/smart-wallets/create-managed`)**: Deploys managed smart wallet on Base Sepolia.
-6. **Nigerian Onboarding (`POST /v1/users/{id}/onboarding/start-nigeria`)**: Activates NGN virtual account rails with BVN.
-7. **Proposal Creation (`POST /v1/users/{id}/smart-wallets/{id}/proposals`)**: Creates `TRANSFER` proposal in `CNGN`.
-8. **Proposal Approval (`POST /v1/users/{id}/smart-wallets/proposals/{id}/approve`)**: Records admin approval.
-9. **Signing Payload (`GET /v1/users/{id}/smart-wallets/proposals/{id}/sign-payload`)**: Returns raw 32-byte digest `signingPayloadHash`.
-10. **Proposal Signing**: Signed **WITHOUT EIP-191 prefix** using raw secp256k1 signing (low-s normalised).
-11. **Signature Submission (`POST /v1/users/{id}/smart-wallets/proposals/{id}/sign`)**: BMONI verifies the recovered signer and executes with KMS co-signer relay.
+1. **Create an Account**:
+   - Simple account creation with business credentials (Owner Name, Business Name, Work Email, and Password).
+2. **Connect Any Bank Account**:
+   - Directly connect an account from **any bank** (Guaranty Trust Bank, Access Bank, Zenith Bank, First Bank, UBA, Kuda, Moniepoint, OPay, Stanbic IBTC, FCMB, Sterling, Fidelity, Union, Wema, etc., or enter any custom bank name).
+   - Enter 10-digit Account Number with instant account name resolution, select account type (Corporate Current, Business Savings, Checking), and configure balance.
+   - Support for multiple connected bank accounts, setting primary accounts, and topping up balances.
+3. **Smart Pay Balance Intelligence**:
+   - Continuously verifies connected bank account balance against upcoming scheduled transfers and payroll batches.
+   - Flags shortfall warnings (`⚠️ Shortfall Warning`) if the bank balance is insufficient, preventing failed payouts.
+   - Displays `✓ Ready to Pay` when balance covers all commitments.
+4. **Single Payment & Batch Payroll Scheduling**:
+   - Schedule payments to staff, suppliers, and contractors with specific dates and execution times.
+   - Batch payroll scheduling calculates running totals and verifies feasibility against the connected bank account balance.
+5. **Automated Background Scheduler**:
+   - Background worker monitors due transfers, verifies funds, executes transfers from connected bank accounts, and records transaction references.
 
 ---
 
-## 📱 The 5 Screens
+## 📱 App Screens
 
-1. **Home Screen**:
-   - Current BMONI wallet balance (₦ / CNGN)
-   - BMONI infrastructure status badge
-   - Smart Pay real-time health indicator (`✓ Ready` or `⚠️ Shortfall Warning`)
-   - Upcoming scheduled payments list with status badges (`SCHEDULED`, `PROCESSING`, `SUCCESSFUL`, `INSUFFICIENT_FUNDS`)
-   - Quick triggers: "Smart Pay Check" and "Run Scheduler"
+1. **Account Creation & Bank Connection (Onboarding)**:
+   - Step 1: Create Account with Owner Name, Business Name, Email, and Password.
+   - Step 2: Connect Bank Account from any bank with account number, account name, and initial balance.
 
-2. **Wallet Screen ("Powered by BMONI")**:
-   - Primary Embedded Wallet card with live balance breakdown (On-chain + Sandbox credit)
-   - EIP-55 Smart Account address on Base Sepolia with one-tap copy
-   - BMONI infrastructure details: Safe multi-sig mode, KMS co-signer, CNGN currency
-   - "Fund Wallet (Sandbox)" action dialog
-   - Full transaction history with BMONI proposal references (`BMONI-XXXXXX`)
+2. **Home Screen**:
+   - Primary connected bank card with live balance, masked account number, and top-up action.
+   - Smart Pay real-time readiness indicator.
+   - Quick action shortcuts (Schedule Payout, Bank Accounts, Run Scheduler).
+   - Upcoming scheduled payments list with status badges.
+   - Recent bank settlements list.
 
-3. **Schedule Payment Screen**:
-   - Single payment form: recipient picker with "Quick Add Recipient" modal
-   - BMONI-supported Nigerian bank selector (Access, GTBank, FirstBank, UBA, Zenith, Kuda, etc.)
-   - Amount, Date (required), Time (optional), and Description
-   - Saves to `scheduled_payments` database
+3. **Bank Accounts Screen**:
+   - Comprehensive multi-bank account management.
+   - Cards for all connected bank accounts showing balances, primary indicator, and actions (Set as Primary, Top Up, Disconnect).
+   - "Connect Bank Account" action supporting any bank.
+   - Full transaction settlement history with transfer references.
 
-4. **Schedule Payroll Screen**:
-   - Multi-recipient batch form with employee selection checkboxes
-   - Individual salary amount inputs per employee
-   - Live Running Total calculator
-   - Single date and time for the batch
-   - Direct batch scheduling with `batch_id`
+4. **Schedule Payment Screen**:
+   - Recipient selection with "Quick Add Recipient" modal supporting all banks.
+   - Source bank indicator showing which connected bank account will fund the transfer.
+   - Amount, Date, Time, and Description.
 
-5. **Payment Check / Smart Pay Screen**:
-   - Pre-payment balance verification screen
-   - Dynamic states:
-     - **⚠️ Shortfall Warning**: Visual alert card with exact shortfall amount, message *"Payroll may fail — shortfall of ₦X — Fund Wallet"*, and a prominent **Fund Wallet Now** CTA button.
-     - **✓ Ready to Pay**: Green verification card showing that current BMONI balance covers all due payments, with a **"Execute Payments Now via BMONI"** CTA.
-   - Breakdown of all payments in the execution queue with real-time feasibility status.
+5. **Schedule Payroll Screen**:
+   - Multi-employee payroll batch form with checkbox selection.
+   - Individual salary inputs and live running total calculation.
+   - Scheduled batch execution with single timestamp.
+
+6. **Payment Check / Smart Pay Screen**:
+   - Pre-payment balance verification comparing connected bank balance against pending payouts.
+   - Dynamic states for shortfall alerts and ready-to-pay verification.
+   - Manual "Execute Transfers Now" action.
 
 ---
 
@@ -99,27 +96,23 @@ Every step of the BMONI Sandbox lifecycle runs against live BMONI development en
 
 ### 1. Prerequisites
 - Node.js v20+
-- Flutter 3.24+ (installed in `~/flutter` or standard path)
+- Flutter 3.24+ (located in `~/flutter` or standard PATH)
 
 ### 2. Backend & Full-Stack Web Server
-The backend runs an Express REST API, SQLite database, and automated payment scheduler (every 30s). It also hosts the compiled Flutter web application:
-
 ```bash
 cd backend
 npm install
 node server.mjs
 ```
-The server will start at: `http://localhost:4000`
+The server will start at `http://localhost:4000`.
 
 ### 3. Running Automated End-to-End System Test
-Run the comprehensive test script that exercises all 5 phases against live BMONI sandbox:
-
 ```bash
 cd backend
 node test_full_system.mjs
 ```
 
-### 4. Running the Flutter App on Mobile / Desktop
+### 4. Running the Flutter App on Mobile / Desktop / Web
 ```bash
 cd paypilot_app
 ~/flutter/bin/flutter run -d chrome     # Run in Chrome

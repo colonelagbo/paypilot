@@ -1,11 +1,12 @@
-import { DatabaseSync } from 'node:sqlite';
+import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.join(__dirname, 'paypilot.db');
 
-export const db = new DatabaseSync(dbPath);
+export const db = new Database(dbPath);
+db.pragma('journal_mode = WAL');
 
 // Initialize tables
 db.exec(`
@@ -14,20 +15,22 @@ db.exec(`
     name TEXT NOT NULL,
     business_name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
-    bmoni_user_id TEXT NOT NULL,
-    owner_address TEXT NOT NULL,
-    owner_private_key TEXT,
+    password_hash TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
-  CREATE TABLE IF NOT EXISTS wallets (
+  CREATE TABLE IF NOT EXISTS bank_accounts (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    bmoni_wallet_id TEXT NOT NULL,
-    wallet_address TEXT NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'CNGN',
+    bank_name TEXT NOT NULL,
+    bank_code TEXT NOT NULL,
+    account_number TEXT NOT NULL,
+    account_name TEXT NOT NULL,
+    account_type TEXT NOT NULL DEFAULT 'Current',
     balance REAL NOT NULL DEFAULT 0.0,
-    sandbox_funded_balance REAL NOT NULL DEFAULT 0.0,
+    is_primary INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'CONNECTED',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
@@ -39,7 +42,6 @@ db.exec(`
     account_number TEXT NOT NULL,
     bank_name TEXT NOT NULL,
     bank_code TEXT NOT NULL,
-    wallet_address TEXT,
     category TEXT NOT NULL DEFAULT 'STAFF',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id)
@@ -49,6 +51,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     recipient_id TEXT NOT NULL,
+    bank_account_id TEXT,
     amount REAL NOT NULL,
     payment_date TEXT NOT NULL,
     payment_time TEXT,
@@ -57,34 +60,32 @@ db.exec(`
     payment_type TEXT NOT NULL DEFAULT 'SINGLE',
     status TEXT NOT NULL DEFAULT 'SCHEDULED',
     shortfall_amount REAL DEFAULT 0.0,
-    bmoni_wallet_id TEXT,
-    bmoni_reference TEXT,
-    bmoni_proposal_id TEXT,
+    reference TEXT,
     error_message TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     executed_at DATETIME,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (recipient_id) REFERENCES recipients(id)
+    FOREIGN KEY (recipient_id) REFERENCES recipients(id),
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id)
   );
 
   CREATE TABLE IF NOT EXISTS transactions (
     id TEXT PRIMARY KEY,
     scheduled_payment_id TEXT,
-    bmoni_reference TEXT NOT NULL,
+    bank_account_id TEXT,
+    reference TEXT NOT NULL,
     amount REAL NOT NULL,
-    currency TEXT NOT NULL DEFAULT 'CNGN',
+    currency TEXT NOT NULL DEFAULT 'NGN',
     status TEXT NOT NULL,
     recipient_name TEXT NOT NULL,
+    recipient_bank TEXT,
+    recipient_account TEXT,
+    source_bank TEXT,
     description TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (scheduled_payment_id) REFERENCES scheduled_payments(id)
+    FOREIGN KEY (scheduled_payment_id) REFERENCES scheduled_payments(id),
+    FOREIGN KEY (bank_account_id) REFERENCES bank_accounts(id)
   );
 `);
 
-try {
-  db.prepare("ALTER TABLE recipients ADD COLUMN category TEXT DEFAULT 'STAFF'").run();
-} catch (e) {
-  // Column already exists
-}
-
-console.log('✅ SQLite Database initialized at:', dbPath);
+console.log('✅ SQLite Database initialized with Bank Accounts at:', dbPath);

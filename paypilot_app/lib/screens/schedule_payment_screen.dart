@@ -212,7 +212,7 @@ class _SchedulePaymentScreenState extends State<SchedulePaymentScreen> {
                   });
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text("Recipient '${newRec['name']}' [$selectedCategory] added! Now set amount & date, then tap 'Schedule Payment via BMONI'."),
+                      content: Text("Recipient '${newRec['name']}' [$selectedCategory] added! Now set amount & date, then tap 'Schedule Bank Transfer'."),
                       backgroundColor: const Color(0xFF7526C9),
                       duration: const Duration(seconds: 4),
                     ),
@@ -299,7 +299,7 @@ class _SchedulePaymentScreenState extends State<SchedulePaymentScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Payment scheduled successfully with BMONI!'),
+            content: Text('Payment scheduled successfully!'),
             backgroundColor: Color(0xFF3FB950),
           ),
         );
@@ -351,7 +351,7 @@ class _SchedulePaymentScreenState extends State<SchedulePaymentScreen> {
                   SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      'PayPilot watches your scheduled payment, verifies BMONI balance before due date, and automates transfer execution.',
+                      'PayPilot watches your scheduled payment, verifies connected bank balance before due date, and automates transfer execution.',
                       style: TextStyle(color: Color(0xFFD8B4FE), fontSize: 12),
                     ),
                   ),
@@ -586,7 +586,7 @@ class _SchedulePaymentScreenState extends State<SchedulePaymentScreen> {
                       children: [
                         Icon(Icons.schedule_send_rounded, size: 20),
                         SizedBox(width: 8),
-                        Text('Schedule Payment via BMONI', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('Schedule Bank Transfer', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
             ),

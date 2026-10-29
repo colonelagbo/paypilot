@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../services/wallet_service.dart';
 import '../services/api_service.dart';
+import 'connect_bank_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final VoidCallback onOnboarded;
@@ -12,47 +12,50 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final _nameController = TextEditingController(text: 'Bunch Dillon');
-  final _businessController = TextEditingController(text: 'Acme Technologies Ltd');
-  final _emailController = TextEditingController(text: 'bunch.dillon@example.com');
+  int _step = 1; // 1: Create Account, 2: Connect Bank Account
+
+  final _nameController = TextEditingController(text: 'Adewale Johnson');
+  final _businessController = TextEditingController(text: 'Adewale Logistics & Tech Ltd');
+  final _emailController = TextEditingController(text: 'adewale@logistics.ng');
+  final _passwordController = TextEditingController(text: 'securePassword123');
+
   bool _isLoading = false;
-  String? _statusMessage;
   String? _errorMessage;
 
-  Future<void> _createWallet() async {
+  Future<void> _createAccount() async {
+    final name = _nameController.text.trim();
+    final business = _businessController.text.trim();
+    final email = _emailController.text.trim();
+
+    if (name.isEmpty || business.isEmpty || email.isEmpty) {
+      setState(() => _errorMessage = 'Please complete all required fields.');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
-      _statusMessage = 'Provisioning on-device EVM key via BmoniEmbeddedSdk...';
     });
 
     try {
-      // 1. Client-side wallet provisioning via bmoni_embedded_sdk
-      final ownerAddress = await WalletService.getOrInitWallet();
-      setState(() {
-        _statusMessage = 'Device key ready ($ownerAddress). Connecting to BMONI API...';
-      });
-
-      // 2. Call backend to create BMONI user, submit KYC persona, and create managed wallet
-      final result = await ApiService.onboardUser(
-        name: _nameController.text.trim(),
-        businessName: _businessController.text.trim(),
-        email: _emailController.text.trim(),
-        ownerAddress: ownerAddress,
+      final res = await ApiService.createAccount(
+        name: name,
+        businessName: business,
+        email: email,
+        password: _passwordController.text.trim(),
       );
 
-      if (result['success'] == true) {
+      if (res['success'] == true) {
         setState(() {
-          _statusMessage = 'BMONI Smart Wallet provisioned successfully!';
+          _isLoading = false;
+          _step = 2; // Transition immediately to Step 2: Connect Bank Account
         });
-        await Future.delayed(const Duration(milliseconds: 600));
-        widget.onOnboarded();
       } else {
-        throw Exception(result['error'] ?? 'Onboarding failed');
+        throw Exception(res['error'] ?? 'Failed to create account');
       }
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = e.toString().replaceAll('Exception:', '').trim();
         _isLoading = false;
       });
     }
@@ -60,12 +63,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_step == 2) {
+      return ConnectBankScreen(
+        isInitialSetup: true,
+        onBankConnected: widget.onOnboarded,
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(28.0),
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
               child: Column(
@@ -83,12 +93,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       ),
                       child: const Icon(
                         Icons.rocket_launch_rounded,
-                        size: 48,
+                        size: 44,
                         color: Color(0xFFB368F7),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   const Text(
                     'PayPilot',
                     textAlign: TextAlign.center,
@@ -101,42 +111,37 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Automated Business Payment Scheduling',
+                    'Automated Business Payment & Payroll Scheduling',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 15,
                       color: Color(0xFF8B949E),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
+
+                  // Step indicator
                   Center(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF7526C9).withOpacity(0.2),
+                        color: const Color(0xFF7526C9).withOpacity(0.15),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: const Color(0xFF7526C9).withOpacity(0.4)),
+                        border: Border.all(color: const Color(0xFF7526C9).withOpacity(0.3)),
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.shield_outlined, size: 14, color: Color(0xFFB368F7)),
-                          SizedBox(width: 6),
-                          Text(
-                            'Powered by BMONI Embedded Wallet',
-                            style: TextStyle(
-                              color: Color(0xFFB368F7),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                      child: const Text(
+                        'Step 1 of 2: Create Account',
+                        style: TextStyle(
+                          color: Color(0xFFB368F7),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 36),
+                  const SizedBox(height: 28),
 
-                  // Business Input Card
+                  // Account Input Card
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
@@ -148,7 +153,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Business Setup',
+                          'Create Account',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -157,13 +162,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'Uses BMONI sandbox persona for instant KYC & NGN Virtual Account creation.',
+                          'Set up your business credentials. Next, you will connect your bank account.',
                           style: TextStyle(fontSize: 13, color: Color(0xFF8B949E)),
                         ),
                         const SizedBox(height: 20),
 
                         // Owner Name
-                        const Text('Owner Name', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 13, fontWeight: FontWeight.w500)),
+                        const Text('Full Name / Account Owner', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 13, fontWeight: FontWeight.w500)),
                         const SizedBox(height: 6),
                         TextField(
                           controller: _nameController,
@@ -173,14 +178,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             fillColor: const Color(0xFF0D1117),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
                             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                            hintText: 'e.g. Bunch Dillon',
+                            hintText: 'e.g. Adewale Johnson',
                             hintStyle: const TextStyle(color: Color(0xFF484F58)),
                           ),
                         ),
                         const SizedBox(height: 16),
 
                         // Business Name
-                        const Text('Business Name', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 13, fontWeight: FontWeight.w500)),
+                        const Text('Business / Organization Name', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 13, fontWeight: FontWeight.w500)),
                         const SizedBox(height: 6),
                         TextField(
                           controller: _businessController,
@@ -190,24 +195,43 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             fillColor: const Color(0xFF0D1117),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
                             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                            hintText: 'e.g. PayPilot Global Ltd',
+                            hintText: 'e.g. Adewale Logistics Ltd',
                             hintStyle: const TextStyle(color: Color(0xFF484F58)),
                           ),
                         ),
                         const SizedBox(height: 16),
 
                         // Email
-                        const Text('Email Address', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 13, fontWeight: FontWeight.w500)),
+                        const Text('Work Email Address', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 13, fontWeight: FontWeight.w500)),
                         const SizedBox(height: 6),
                         TextField(
                           controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
                           style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: const Color(0xFF0D1117),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
                             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
-                            hintText: 'e.g. bunch.dillon@example.com',
+                            hintText: 'e.g. admin@company.com',
+                            hintStyle: const TextStyle(color: Color(0xFF484F58)),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Password
+                        const Text('Password', style: TextStyle(color: Color(0xFFC9D1D9), fontSize: 13, fontWeight: FontWeight.w500)),
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: _passwordController,
+                          obscureText: true,
+                          style: const TextStyle(color: Colors.white),
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: const Color(0xFF0D1117),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF30363D))),
+                            hintText: '••••••••',
                             hintStyle: const TextStyle(color: Color(0xFF484F58)),
                           ),
                         ),
@@ -231,27 +255,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ],
 
-                  if (_statusMessage != null) ...[
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFB368F7))),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _statusMessage!,
-                            style: const TextStyle(color: Color(0xFFB368F7), fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-
                   const SizedBox(height: 24),
 
-                  // Create Wallet CTA
+                  // Create Account CTA
                   ElevatedButton(
-                    onPressed: _isLoading ? null : _createWallet,
+                    onPressed: _isLoading ? null : _createAccount,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF7526C9),
                       foregroundColor: Colors.white,
@@ -260,15 +268,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       elevation: 0,
                     ),
                     child: _isLoading
-                      ? const Text('Provisioning BMONI Wallet...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))
-                      : const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.account_balance_wallet_outlined, size: 20),
-                            SizedBox(width: 8),
-                            Text('Create Business Wallet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                              SizedBox(width: 10),
+                              Text('Creating Account...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            ],
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.arrow_forward_rounded, size: 20),
+                              SizedBox(width: 8),
+                              Text('Create Account & Continue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
                   ),
                 ],
               ),

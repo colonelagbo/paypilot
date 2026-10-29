@@ -46,7 +46,7 @@ class _SmartPayScreenState extends State<SmartPayScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(result['message'] ?? 'Executed due payments via BMONI!'),
+            content: Text(result['message'] ?? 'Executed due scheduled payments!'),
             backgroundColor: const Color(0xFF7526C9),
           ),
         );
@@ -198,14 +198,14 @@ class _SmartPayScreenState extends State<SmartPayScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Your BMONI wallet holds ${currencyFormat.format(balance)}, but scheduled payments require ${currencyFormat.format(totalDue)}. Fund your wallet before the scheduler executes.',
+                      'Your connected bank account holds ${currencyFormat.format(balance)}, but scheduled payments require ${currencyFormat.format(totalDue)}. Top up your account before the scheduler executes.',
                       style: const TextStyle(color: Color(0xFFD1D5DB), fontSize: 13),
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
                       onPressed: widget.onFundWalletTapped,
-                      icon: const Icon(Icons.account_balance_wallet_rounded, size: 18),
-                      label: const Text('Fund Wallet Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      icon: const Icon(Icons.account_balance_rounded, size: 18),
+                      label: const Text('Top Up Account Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFF59E0B),
                         foregroundColor: Colors.black,
@@ -253,12 +253,12 @@ class _SmartPayScreenState extends State<SmartPayScreen> {
                     ),
                     const SizedBox(height: 14),
                     const Text(
-                      'BMONI Wallet balance covers all scheduled payouts!',
+                      'Connected Bank Account covers all scheduled payouts!',
                       style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Wallet holds ${currencyFormat.format(balance)}. Total required is ${currencyFormat.format(totalDue)}. All transfers are ready for automated execution.',
+                      'Account holds ${currencyFormat.format(balance)}. Total required is ${currencyFormat.format(totalDue)}. All transfers are ready for automated execution.',
                       style: const TextStyle(color: Color(0xFFD1D5DB), fontSize: 13),
                     ),
                     const SizedBox(height: 20),
@@ -267,7 +267,7 @@ class _SmartPayScreenState extends State<SmartPayScreen> {
                       icon: const Icon(Icons.send_rounded, size: 18),
                       label: _isExecuting
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
-                          : const Text('Execute Payments Now via BMONI', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          : const Text('Execute Transfers Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF34D399),
                         foregroundColor: Colors.black,
@@ -312,7 +312,7 @@ class _SmartPayScreenState extends State<SmartPayScreen> {
                 children: [
                   const Text('Balance & Commitment Analysis', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                   const SizedBox(height: 16),
-                  _buildMetricRow('Current BMONI Wallet Balance', currencyFormat.format(balance), const Color(0xFF58A6FF)),
+                  _buildMetricRow('Connected Bank Balance', currencyFormat.format(balance), const Color(0xFF58A6FF)),
                   const Divider(color: Color(0xFF30363D)),
                   _buildMetricRow('Total Amount Due', currencyFormat.format(totalDue), Colors.white),
                   const Divider(color: Color(0xFF30363D)),

@@ -30,8 +30,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  bmoni_embedded_sdk:
-    path: ../packages/bmoni_embedded_sdk
   http: ^1.2.2
   intl: ^0.19.0
 
